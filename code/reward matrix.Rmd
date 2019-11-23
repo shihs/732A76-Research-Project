@@ -1,0 +1,447 @@
+---
+title: "Reward Matrix"
+author: "Min-Chun Shih"
+output: 
+  html_document:
+    toc: true
+    toc_float: TRUE
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(gridExtra)
+```
+
+
+```{r, eval = FALSE}
+# import data
+# # ======= game type (regular season/playoffs) =======
+game <- read.csv("../data/game.csv", sep = ";")
+game$Season <- as.character(game$Season)
+game <- game[which(game$Season == "2013-2014"), ]
+
+# ======= goals records =======
+state <- read.csv("../data/event_goal.csv", header = FALSE)
+names(state) <- c(
+  "GoalId",
+  "GameId",
+  "AwayTeamId",
+  "HomeTeamId",
+  "EventNumber",
+  "PeriodNumber",
+  "EventTime",
+  "ScoringTeam",
+  "ScoringTeamId",
+  "Disposition",
+  "GoalScorerNumber",
+  "GoalScorerId",
+  "NumGoals",
+  "FirstAssistNumber",
+  "FirstAssistId",
+  "NumAssistsFirstPlayer",
+  "SecondAssistNumber",
+  "SecondAssistId",
+  "NumAssistsSecondPlayer",
+  "ShotType",
+  "Zone",
+  "ShotDistance")
+
+# select the columns
+state <- state[, c("GameId", "AwayTeamId", "HomeTeamId", "PeriodNumber", "EventTime", "ScoringTeamId")]
+
+# merge state data and game data to get Season and SeasonType
+state <- left_join(game, state)
+state <- state[which(state$PeriodNumber %in% 1:3), ]
+
+# ======= Manpower =======
+events <- read.csv("../data/play_by_play_events.csv", sep = ";")
+
+# merge with game data to get Season and SeasonType
+events <- left_join(game, events)
+events <- events[which(events$PeriodNumber %in% 1:3), ]
+
+# compute manpower for away and home teams
+for (i in 12:29) {
+  events[, i] <- as.character(events[, i])
+}
+manpowewr <- unlist(lapply(1:nrow(events), function(x) {
+  length(which(events[x, 12:20] != "NULL"))
+}))
+events$ManpowerAway <- manpowewr
+
+manpowewr <- unlist(lapply(1:nrow(events), function(x) {
+  length(which(events[x, 21:29] != "NULL"))
+}))
+events$ManpowerHome <- manpowewr
+
+manpower <- events[, c("GameId", "PeriodNumber", "EventTime", "ManpowerAway", "ManpowerHome")]
+manpower <- unique(manpower)
+save(manpower, file = "../data/manpower.Rdata")
+
+# filter GOAL events
+events <- events[which(events$EventType =="GOAL"), ]
+events <- events[, c("GameId", "PeriodNumber", "EventTime", "ManpowerAway", "ManpowerHome")]
+
+
+
+state$EventTime <- as.character(state$EventTime)
+events$EventTime <- as.character(events$EventTime)
+
+df <- inner_join(state, events)
+
+df$EventTime <- as.character(df$EventTime)
+df$seconds <- as.integer(substr(df$EventTime, 4, 5))*60 + 
+  as.integer(substr(df$EventTime, 7, 8))
+
+
+save(df, file = "../data/seaon20132014.rdata")
+```
+
+```{r}
+load("../data/seaon20132014.rdata")
+```
+
+
+```{r}
+i <- which(df$PeriodNumber == 1)
+ii <- intersect(which(df$SeasonType == "Regular Season"), i)
+plot1 <- ggplot(df[ii, ], aes(x = seconds)) + 
+  geom_histogram(color="black", fill="gold1", alpha=0.7) +
+  theme_bw() +
+  labs(title = "The distibution of Goals in Times (Regular Season)",
+       subtitle="PeriodNumber is 1") +
+  geom_hline(aes(yintercept=
+                   mean(table(cut(df[ii, "seconds"],
+                                  breaks = 30)))),
+             color="red", linetype="dashed", size=0.5)
+jj <- intersect(which(df$SeasonType == "Playoffs"), i)
+plot2 <- ggplot(df[jj, ], aes(x = seconds)) + 
+  geom_histogram(color="black", fill="gold1", alpha=0.7) +
+  theme_bw() +
+  labs(title = "The distibution of Goals in Times (Playoffs)",
+       subtitle="PeriodNumber is 1") +
+  geom_hline(aes(yintercept=
+                   mean(table(cut(df[jj, "seconds"],
+                                  breaks = 30)))),
+             color="red", linetype="dashed", size=0.5)
+grid.arrange(plot1, plot2)
+
+i <- which(df$PeriodNumber %in% c(2) == TRUE)
+ii <- intersect(which(df$SeasonType == "Regular Season"), i)
+plot1 <- ggplot(df[ii, ], aes(x = seconds)) + 
+  geom_histogram(color="black", fill="gold1", alpha=0.7) +
+  theme_bw() +
+  labs(title = "The distibution of Goals in Times (Regular Season)",
+       subtitle="PeriodNumber is 2") +
+  geom_hline(aes(yintercept=
+                   mean(table(cut(df[ii, "seconds"],
+                                  breaks = 30)))),
+             color="red", linetype="dashed", size=0.5)
+jj <- intersect(which(df$SeasonType == "Playoffs"), i)
+plot2 <- ggplot(df[jj, ], aes(x = seconds)) + 
+  geom_histogram(color="black", fill="gold1", alpha=0.7) +
+  theme_bw() +
+  labs(title = "The distibution of Goals in Times (Playoffs)",
+       subtitle="PeriodNumber is 2") +
+  geom_hline(aes(yintercept=
+                   mean(table(cut(df[jj, "seconds"],
+                                  breaks = 30)))),
+             color="red", linetype="dashed", size=0.5)
+grid.arrange(plot1, plot2)
+
+i <- which(df$PeriodNumber %in% c(3) == TRUE)
+ii <- intersect(which(df$SeasonType == "Regular Season"), i)
+plot1 <- ggplot(df[ii, ], aes(x = seconds)) + 
+  geom_histogram(color="black", fill="gold1", alpha=0.7) +
+  theme_bw() +
+  labs(title = "The distibution of Goals in Times (Regular Season)",
+       subtitle="PeriodNumber is 3") +
+  geom_hline(aes(yintercept=
+                   mean(table(cut(df[ii, "seconds"],
+                                  breaks = 30)))),
+             color="red", linetype="dashed", size=0.5)
+jj <- intersect(which(df$SeasonType == "Playoffs"), i)
+plot2 <- ggplot(df[jj, ], aes(x = seconds)) + 
+  geom_histogram(color="black", fill="gold1", alpha=0.7) +
+  theme_bw() +
+  labs(title = "The distibution of Goals in Times (Playoffs)",
+       subtitle="PeriodNumber is 3") +
+  geom_hline(aes(yintercept=
+                   mean(table(cut(df[jj, "seconds"],
+                                  breaks = 30)))),
+             color="red", linetype="dashed", size=0.5)
+grid.arrange(plot1, plot2)
+
+
+
+library(data.table)
+df <- data.table(df)
+
+kable(table((df[, c("GameId", "SeasonType")])$SeasonType), caption = "The amount of Games") %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, 
+                position = "left")
+```
+
+
+
+```{r, eval = FALSE}
+library(tidyr)
+
+# ======= game type (regular season/playoffs) =======
+game <- read.csv("../data/game.csv", sep = ";")
+game$Season <- as.character(game$Season)
+game <- game[which(game$Season == "2013-2014"), ]
+
+# ======= goals records =======
+state <- read.csv("../data/event_goal.csv", header = FALSE)
+names(state) <- c(
+  "GoalId",
+  "GameId",
+  "AwayTeamId",
+  "HomeTeamId",
+  "EventNumber",
+  "PeriodNumber",
+  "EventTime",
+  "ScoringTeam",
+  "ScoringTeamId",
+  "Disposition",
+  "GoalScorerNumber",
+  "GoalScorerId",
+  "NumGoals",
+  "FirstAssistNumber",
+  "FirstAssistId",
+  "NumAssistsFirstPlayer",
+  "SecondAssistNumber",
+  "SecondAssistId",
+  "NumAssistsSecondPlayer",
+  "ShotType",
+  "Zone",
+  "ShotDistance")
+
+# select the columns
+state <- state[, c("GameId", "AwayTeamId", "HomeTeamId", "PeriodNumber", "EventTime", "ScoringTeamId")]
+
+# merge state data and game data to get Season and SeasonType
+state <- left_join(game, state)
+
+
+winer <- state %>% 
+  group_by(GameId, ScoringTeamId) %>%
+  summarise(goals = n())
+
+# compute the goals of AwayTeam and HomeTeam for each game
+goals_end <- distinct(state %>%
+  select(GameId, AwayTeamId, HomeTeamId))
+
+goals_end$AwayGoals <- 0
+goals_end$HomeGoals <- 0
+
+for (i in 1:nrow(goals_end)) {
+  id <- goals_end$GameId[i]
+  j <- which(winer$GameId == id)
+  for (jj in j) {
+    if(winer[jj, ]$ScoringTeamId == goals_end$AwayTeamId[i]) {
+      goals_end$AwayGoals[i] <- winer[jj, ]$goals
+    } else {
+      goals_end$HomeGoals[i] <- winer[jj, ]$goals
+    }
+  }
+}
+
+
+winer <- winer %>%
+  group_by(GameId) %>%
+  filter(goals == max(goals)) %>%
+  select(GameId, ScoringTeamId)
+names(winer)[2] <- "Winer"
+
+goals_end <- full_join(goals_end, winer)
+save(goals_end, file = "../data/goals_end.Rdata")
+```
+
+```{r}
+load("../data/goals_end.Rdata")
+```
+
+
+```{r}
+# compute seconds 將時間換算成秒
+df$seconds <- (df$PeriodNumber - 1)*20*60 + df$seconds
+# order by seconds 根據節數與時間秒數排序
+df <- df[order(df$GameId, df$seconds), ]
+
+
+# get away team goals
+df$AwayTeamGoals <- ifelse(df$ScoringTeamId == df$AwayTeamId, 1, 0)
+# get home team goals
+df$HomeTeamGoals <- ifelse(df$ScoringTeamId == df$HomeTeamId, 1, 0)
+# compute cumulate goals
+df <- data.table(df)
+GF <- df[, list(GF = cumsum(AwayTeamGoals)), by=list(GameId)]
+GA <- df[, list(GA = cumsum(HomeTeamGoals)), by=list(GameId)]
+df <- cbind(df, GF[, -1])
+df <- cbind(df, GA[, -1])
+# df <- data.frame(df)
+df <- df[, c(-12, -13)]
+
+df <- left_join(df, goals_end)
+```
+
+
+```{r}
+d <- data.frame(table(cut(df$seconds, seq(0, 20*60*3, 30))))
+d$seq <- 1:nrow(d)
+d$Var1 <- as.character(d$Var1)
+barplot(d$Freq)
+
+
+d <- data.frame(table(cut(df$seconds, seq(0, 20*60*3, 60))))
+d$seq <- 1:nrow(d)
+d$Var1 <- as.character(d$Var1)
+barplot(d$Freq)
+```
+
+
+
+```{r}
+# manpower for every events
+load("../data/manpower.Rdata")
+manpower <- manpower[-which(manpower$ManpowerAway == 0 | manpower$ManpowerHome == 0), ]
+manpower$seconds <- as.integer(substr(manpower$EventTime, 4, 5))*60 + 
+  as.integer(substr(manpower$EventTime, 7, 8))
+manpower$seconds <- (manpower$PeriodNumber - 1)*20*60 + manpower$seconds
+manpower <- manpower[, c("GameId", "ManpowerAway", "ManpowerHome", "seconds")]
+```
+
+```{r}
+# get the conut matrix 
+get_count_matrix <- function(time_interval) {
+  # compute interval
+  interval <- cut(df$seconds, seq(0, 20*60*3, time_interval))
+  
+  df$interval <- interval
+  df$index <- as.integer(df$interval)
+  df$ratio <- (time_interval*df$index - df$seconds)/time_interval
+  
+  count <- data.table(GameId = as.character(), interval = as.character(),
+                   GF = as.integer(), GA = as.integer(), count = as.numeric(), 
+                   ManpowerAway = as.integer(), ManpowerHome = as.integer(),
+                   AwayGoals = as.integer(), HomeGoals = as.integer())
+  
+  interval_levels <- factor(levels(interval), levels = levels(interval))
+  n_interval <- length(levels(interval))
+  
+  d <- df %>%
+    select(GameId, interval, GF, GA, count = ratio, 
+           ManpowerAway, ManpowerHome, AwayGoals, HomeGoals)
+  
+  ids <- unique(d$GameId)
+  
+  for (id in ids) {
+    print (id)
+    
+    game_manpower <- manpower[which(manpower$GameId == id), ]
+    
+    t <- d[which(d$GameId == id), ]
+    n <- nrow(t)
+    first <- as.integer(t$interval)[1]
+    freq <- data.frame(table(t$interval))
+    AwayGoals <- t$AwayGoals[1]
+    HomeGoals <- t$HomeGoals[1]
+  
+    # the 
+    freq_0_interval <- which(freq$Freq == 0)
+    for (i in freq_0_interval) {
+      manpower_away <- game_manpower[manpower_row, "ManpowerAway"]
+      manpower_home <- game_manpower[manpower_row, "ManpowerHome"]
+      
+      
+      if (i < first) {
+        manpower_row <- which((game_manpower$seconds > 
+                                 as.integer(interval_levels[i])*time_interval)  == TRUE)[1]
+        l = list(t, data.table(GameId = id, interval = interval_levels[i],
+                               GF = 0, GA = 0, count = 1.0, 
+                               ManpowerAway = manpower_away, 
+                               ManpowerHome = manpower_home,
+                               AwayGoals = AwayGoals, HomeGoals = HomeGoals))
+      } else {
+        ii <- which(t$interval == interval_levels[i-1])
+        ii <- ii[length(ii)]
+        l <- list(t, data.table(GameId = id, interval = interval_levels[i],
+                                GF = t[ii, ]$GF, GA = t[ii, ]$GA, count = 1.0, 
+                                ManpowerAway = manpower_away, 
+                                ManpowerHome = manpower_home,
+                                AwayGoals = AwayGoals, HomeGoals = HomeGoals))
+      }
+      t <- rbindlist(l)
+    }
+  
+    last_interval_level <- ""
+    for (i in 1:n) {
+      manpower_away <- game_manpower[manpower_row, "ManpowerAway"]
+      manpower_home <- game_manpower[manpower_row, "ManpowerHome"]
+      ii <- as.integer(t[i, ]$interval)
+  
+      
+      if (last_interval_level != interval_levels[ii]) {
+        if (i == 1) {
+          l <- list(t, data.table(GameId = id, interval = interval_levels[ii],
+                                  GF = 0, GA = 0, count = 1 - t[1, ]$count, 
+                                  ManpowerAway = manpower_away, 
+                                  ManpowerHome = manpower_home,
+                                  AwayGoals = AwayGoals, HomeGoals = HomeGoals))
+        } else {
+          l <- list(t, data.table(GameId = id, interval = interval_levels[ii],
+                                  GF = t[i-1, ]$GF, GA = t[i-1, ]$GA,
+                                  count = 1 - t[i, ]$count, 
+                                  ManpowerAway = 0, ManpowerHome = 0,
+                                  AwayGoals = AwayGoals, HomeGoals = HomeGoals))
+        }
+      } else {
+        next
+      }
+      t <- rbindlist(l)
+      last_interval_level <- interval_levels[ii]
+    }
+  
+    t <- t[order(t$interval, t$GF, t$GA), ]
+  
+    l <- list(count, t)
+    count <- rbindlist(l)
+  }
+  
+  # group by (interval, GF, GA, ManpowerAway, ManpowerHome, AwayGoals, HomeGoals)
+  winer_count <- count %>%
+    group_by(interval, GF, GA,
+             ManpowerAway, ManpowerHome, AwayGoals, HomeGoals) %>%
+    summarise(count = sum(count))
+  
+  
+  
+  
+}
+
+save(count, file = "../data/count.Rdata")
+
+
+```
+
+
+```{r}
+
+# 前三節結束的勝負！！！
+
+
+
+
+```
+
+
+
+
+
