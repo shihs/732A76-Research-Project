@@ -17,6 +17,7 @@ library(kableExtra)
 library(gridExtra)
 ```
 
+Only use data from season 2013-2014
 
 ```{r, eval = FALSE}
 # import data
@@ -102,11 +103,21 @@ df$seconds <- as.integer(substr(df$EventTime, 4, 5))*60 +
 save(df, file = "../data/seaon20132014.rdata")
 ```
 
-```{r, eval = FALSE}
+
+
+```{r}
 load("../data/seaon20132014.rdata")
 ```
 
 
+# Number of games
+```{r}
+kable(table((df[, c("GameId", "SeasonType")])$SeasonType), caption = "The amount of Games") %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, 
+                position = "left")
+```
+
+# Distribution of goals in different period time
 ```{r}
 i <- which(df$PeriodNumber == 1)
 ii <- intersect(which(df$SeasonType == "Regular Season"), i)
@@ -181,13 +192,9 @@ grid.arrange(plot1, plot2)
 
 library(data.table)
 df <- data.table(df)
-
-kable(table((df[, c("GameId", "SeasonType")])$SeasonType), caption = "The amount of Games") %>%
-  kable_styling(bootstrap_options = "striped", full_width = F, 
-                position = "left")
 ```
 ```{r}
-rm(plot1, plot2)
+rm(plot1, plot2, i, ii, jj)
 ```
 
 ```{r, eval = FALSE}
@@ -269,7 +276,6 @@ save(goals_end, file = "../data/goals_end.Rdata")
 load("../data/goals_end.Rdata")
 ```
 
-
 ```{r, eval = FALSE}
 ### Compute seconds ###
 # compute seconds 將時間換算成秒
@@ -315,20 +321,6 @@ save(df, file = "../data/df.Rdata")
 load(file = "../data/df.Rdata")
 ```
 
-```{r}
-d <- data.frame(table(cut(df$seconds, seq(0, 20*60*3, 30))))
-d$seq <- 1:nrow(d)
-d$Var1 <- as.character(d$Var1)
-barplot(d$Freq)
-
-
-d <- data.frame(table(cut(df$seconds, seq(0, 20*60*3, 60))))
-d$seq <- 1:nrow(d)
-d$Var1 <- as.character(d$Var1)
-barplot(d$Freq)
-```
-
-
 
 ```{r}
 # manpower for every events, if will be used for compute time interval's manpower
@@ -341,14 +333,19 @@ manpower <- manpower[, c("GameId", "ManpowerAway", "ManpowerHome", "seconds")]
 ```
 
 ```{r}
-# get the conut matrix 
-get_count_matrix <- function(df, time_interval) {
+# get the conut matrix
+get_count_matrix <- function(df, time_interval, type = c("ratio", "count_before")) {
   # compute interval
   interval <- cut(df$seconds, seq(0, 20*60*3, time_interval))
   
   df$interval <- interval
   df$index <- as.integer(df$interval)
-  df$ratio <- (time_interval*df$index - df$seconds)/time_interval
+  if (type == "ratio") {
+    df$ratio <- (time_interval*df$index - df$seconds)/time_interval
+  }
+  if (type == "count_before") {
+    df$ratio <- 1
+  }
   
   count <- data.table(GameId = as.character(), interval = as.character(),
                    GF = as.integer(), GA = as.integer(), count = as.numeric(), 
@@ -387,8 +384,6 @@ get_count_matrix <- function(df, time_interval) {
 
       
       if (i < first) {
-        # manpower_row <- which((game_manpower$seconds > 
-        #                          as.integer(interval_levels[i])*time_interval)  == TRUE)[1]
         l = list(t, data.table(GameId = id, interval = interval_levels[i],
                                GF = 0, GA = 0, count = 1.0, 
                                ManpowerAway = manpower_away, 
@@ -456,25 +451,180 @@ get_count_matrix <- function(df, time_interval) {
   count_matrix$GoalDiff <- count_matrix$HomeGoals - count_matrix$AwayGoals
   
   return(count_matrix)
-  
+}
+```
+
+
+
+***
+
+# Count Matrix
+```{r}
+# function
+goal_ditribution_plot <- function(df, time_interval) {
+  d <- data.frame(table(cut(df$seconds, seq(0, 20*60*3, time_interval))))
+  d$seq <- 1:nrow(d)
+  d$Var1 <- as.character(d$Var1)
+  barplot(d$Freq, main = paste("The goal distribution of time interval =", time_interval, "seconds"))
 }
 
+count_group_homeresult <- function(count_matrix, time_interval) {
+  count <- count_matrix %>%
+    group_by(interval, HomeResult) %>%
+    summarise(count = sum(count))
 
+  # lose
+  count_lose <- count[which(count$HomeResult == "lose"), ]
+  plot(count_lose$interval, count_lose$count, xaxt="n", 
+       main = "lose")
+  lines(count_lose$interval, count_lose$count)
+  abline(h = mean(count_lose$count), col = "red", lty=2)
+  labs <- levels(count_lose$interval)
+  text(x=as.integer(count_lose$interval) - 1, 
+       y=min(count_lose$count) - (max(count_lose$count)- min(count_lose$count))/10, 
+       labs, xpd=TRUE, srt=45, cex=0.5)
+
+  # win
+  count_win <- count[which(count$HomeResult == "win"), ]
+  plot(count_win$interval, count_win$count, main = "win", xaxt="n")
+  lines(count_win$interval, count_win$count)
+  abline(h = mean(count_win$count), col = "red", lty=2)
+  labs <- levels(count_win$interval)
+  text(x=as.integer(count_win$interval) - 1, 
+       y=min(count_win$count) - (max(count_win$count)- min(count_win$count))/10, 
+       labs, xpd=TRUE, srt=45, cex=0.5)
+
+  # tied win
+  count_tied_lose <- count[which(count$HomeResult == "tied_lose"), ]
+  plot(count_tied_lose$interval, count_tied_lose$count, main = "tied lose", xaxt="n")
+  lines(count_tied_lose$interval, count_tied_lose$count)
+  abline(h = mean(count_tied_lose$count), col = "red", lty=2)
+  labs <- levels(count_tied_lose$interval)
+  text(x=as.integer(count_tied_lose$interval) - 1, 
+       y=min(count_tied_lose$count) - (max(count_tied_lose$count)- min(count_tied_lose$count))/10, 
+       labs, xpd=TRUE, srt=45, cex=0.5)
+
+  # tied win
+  count_tied_win <- count[which(count$HomeResult == "tied_win"), ]
+  plot(count_tied_win$interval, count_tied_win$count, main = "tied win", xaxt="n")
+  lines(count_tied_win$interval, count_tied_win$count)
+  abline(h = mean(count_tied_win$count), col = "red", lty=2)
+  labs <- levels(count_tied_win$interval)
+  text(x=as.integer(count_tied_win$interval) - 1, 
+       y=min(count_tied_win$count) - (max(count_tied_win$count)- min(count_tied_win$count))/10, 
+       labs, xpd=TRUE, srt=45, cex=0.5)
+
+
+  count_interval <- data.frame(Type = as.character(), Mean = as.numeric(), Range = as.numeric(),
+                        Max = as.numeric(), Min = as.numeric())
+  count_interval <- rbind(count_interval, data.frame(Type = "Lose", Mean = mean(count_lose$count), 
+                                         Range = max(count_lose$count) - min(count_lose$count),
+                                         Max = max(count_lose$count), Min = min(count_lose$count)))
+  count_interval <- rbind(count_interval, data.frame(Type = "Win", Mean = mean(count_win$count), 
+                                         Range = max(count_win$count) - min(count_win$count),
+                                         Max = max(count_win$count), Min = min(count_win$count)))
+  count_interval <- rbind(count_interval, data.frame(Type = "Tied Lose", Mean = mean(count_tied_lose$count), 
+                                         Range = max(count_tied_lose$count) - min(count_tied_lose$count),
+                                         Max = max(count_tied_lose$count), Min = min(count_tied_lose$count)))
+  count_interval <- rbind(count_interval, data.frame(Type = "Tied Win", Mean = mean(count_tied_win$count), 
+                                         Range = max(count_tied_win$count) - min(count_tied_win$count),
+                                         Max = max(count_tied_win$count), Min = min(count_tied_win$count)))
+
+  return(list(count_interval = count_interval, count = count, 
+              count_lose = count_lose, count_win = count_win, 
+              count_tied_lose = count_tied_lose, count_tied_win = count_tied_win))
+}
 ```
 
 
+## Group by Home Team Result(win/lose/tied win/tied lose)
+### Time interval = 120 seconds
+```{r}
+time_interval <- 120
+
+goal_ditribution_plot(df, time_interval)
+
+# count_matrix_120 <- get_count_matrix(df, time_interval, type = "ratio")
+# save(count_matrix_120, file = "../data/count_matrix_120.Rdata")
+load("../data/count_matrix_120.Rdata")
+
+count_120 <- count_group_homeresult(count_matrix_120, time_interval)
+
+kable(count_120$count_interval, caption = paste("Statistics for count interval = ", time_interval)) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, 
+                position = "left")
+```
+
+
+### Time interval = 60 seconds
 ```{r}
 time_interval <- 60
-count_matrix_60 <- get_count_matrix(df, time_interval)
 
+goal_ditribution_plot(df, time_interval)
 
+# count_matrix_60 <- get_count_matrix(df, time_interval, type = "ratio")
+# save(count_matrix_60, file = "../data/count_matrix_60.Rdata")
+load("../data/count_matrix_60.Rdata")
 
+count_60 <- count_group_homeresult(count_matrix_60, time_interval)
 
-
-
+kable(count_60$count_interval, caption = paste("Statistics for count interval = ", time_interval)) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, 
+                position = "left")
 ```
 
 
+### Time interval = 30 seconds
+```{r}
+time_interval <- 30
 
+goal_ditribution_plot(df, time_interval)
+
+# count_matrix_30 <- get_count_matrix(df, time_interval, type = "ratio")
+# save(count_matrix_30, file = "../data/count_matrix_30.Rdata")
+load("../data/count_matrix_30.Rdata")
+
+count_30 <- count_group_homeresult(count_matrix_30, time_interval)
+kable(count_30$count_interval, caption = paste("Statistics for count interval = ", time_interval)) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, 
+                position = "left")
+```
+
+```{r}
+cc <- count_30$count_interval
+cc$Interval <- 30
+statistics <- cc
+
+cc <- count_60$count_interval
+cc$Interval <- 60
+statistics <- rbind(statistics, cc)
+
+cc <- count_120$count_interval
+cc$Interval <- 120
+statistics <- rbind(statistics, cc)
+
+rm(cc)
+statistics <- statistics[order(statistics$Type), ]
+statistics
+```
+
+
+## Group by 
+
+
+## Different counting method
+
+```{r}
+time_interval <- 30
+
+# count_matrix_30_before <- get_count_matrix(df, time_interval, type = "count_before")
+# save(count_matrix_30_before, file = "../data/count_matrix_30_before.Rdata")
+load("../data/count_matrix_30_before.Rdata")
+
+count_30_bofore <- count_group_homeresult(count_matrix_30_before, time_interval)
+kable(count_30_bofore$count_interval, caption = paste("Statistics for count interval = ", time_interval)) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, 
+                position = "left")
+```
 
 
