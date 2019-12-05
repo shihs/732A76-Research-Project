@@ -605,11 +605,58 @@ statistics <- rbind(statistics, cc)
 
 rm(cc)
 statistics <- statistics[order(statistics$Type), ]
-statistics
+kable(statistics, caption = paste("Statistics for count interval = ", time_interval)) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, 
+                position = "left")
 ```
 
 
-## Group by 
+## Group by GoalDiff & Result
+```{r}
+count_matrix_diff_30  <- count_matrix_30 %>%
+  group_by(interval, HomeResult, GoalDiff) %>%
+  summarise(count = sum(count))
+
+table(count_matrix_diff_30$HomeResult, count_matrix_diff_30$GoalDiff)
+
+cc <- count_matrix_diff_30 %>%
+  group_by(HomeResult, GoalDiff) %>%
+  summarise(mean = mean(count), max = max(count), min = min(count))
+  
+kable(cc, caption = paste("Statistics for count interval = ", time_interval)) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, 
+                position = "left")
+
+
+
+# lose
+count_lose <- count_matrix_diff_30[which(count_matrix_diff_30$HomeResult == "lose" & 
+                                           count_matrix_diff_30$GoalDiff == -1), ]
+plot(count_lose$interval, count_lose$count, xaxt="n", 
+     main = "lose, GoalDiff = -1")
+lines(count_lose$interval, count_lose$count)
+abline(h = mean(count_lose$count), col = "red", lty=2)
+labs <- levels(count_lose$interval)
+text(x=as.integer(count_lose$interval) - 1, 
+     y=min(count_lose$count) - (max(count_lose$count)- min(count_lose$count))/10, 
+     labs, xpd=TRUE, srt=45, cex=0.5)
+
+
+ # win
+count_win <- count_matrix_diff_30[which(count_matrix_diff_30$HomeResult == "win" & 
+                                           count_matrix_diff_30$GoalDiff == 1), ]
+plot(count_win$interval, count_win$count, xaxt="n", 
+     main = "win, GoalDiff = 1")
+lines(count_win$interval, count_win$count)
+abline(h = mean(count_win$count), col = "red", lty=2)
+labs <- levels(count_win$interval)
+text(x=as.integer(count_win$interval) - 1, 
+     y=min(count_win$count) - (max(count_win$count)- min(count_win$count))/10, 
+     labs, xpd=TRUE, srt=45, cex=0.5)
+
+
+
+```
 
 
 ## Different counting method
