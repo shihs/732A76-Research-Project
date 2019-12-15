@@ -366,6 +366,7 @@ get_count_matrix <- function(df, time_interval, type = c("ratio", "after")) {
   }
   if (type == "after") {
     df$ratio <- 1
+    
   }
   
   # get the coount for every time interval for each game
@@ -381,6 +382,14 @@ get_count_matrix <- function(df, time_interval, type = c("ratio", "after")) {
   d <- df %>%
     select(GameId, SeasonType, interval, GF, GA, count = ratio,
            ManpowerAway, ManpowerHome, AwayGoals, HomeGoals, HomeResult)
+  
+  if (type == "after") {
+    d <- cbind(d, n = 1:nrow(d))
+    d <- d %>% 
+      group_by(GameId, count, interval) %>%
+      filter(n == max(n))
+    d$n <- NULL  
+  }
   
   ids <- unique(d$GameId)
   
@@ -431,48 +440,50 @@ get_count_matrix <- function(df, time_interval, type = c("ratio", "after")) {
       t <- rbindlist(l)
     }
     
-    last_interval_level <- ""
-    for (i in 1:n) {
-      # manpower numbers are same as the last event
-      ii <- as.integer(t[i, ]$interval)
-      nn <- which((game_manpower$seconds < ii*time_interval)  == TRUE)
-      manpower_row <- nn[length(nn)]
-      manpower_away <- game_manpower[manpower_row, "ManpowerAway"]
-      manpower_home <- game_manpower[manpower_row, "ManpowerHome"]
+    if (type == "ratio") {
+      last_interval_level <- ""
+      for (i in 1:n) {
+        # manpower numbers are same as the last event
+        ii <- as.integer(t[i, ]$interval)
+        nn <- which((game_manpower$seconds < ii*time_interval)  == TRUE)
+        manpower_row <- nn[length(nn)]
+        manpower_away <- game_manpower[manpower_row, "ManpowerAway"]
+        manpower_home <- game_manpower[manpower_row, "ManpowerHome"]
       
-      if (last_interval_level != interval_levels[ii]) {
-        if (i == 1) {
-          # if it is the first time interval before made a goal, gf and ga are 0
-          l <- list(t, data.table(GameId = id, SeasonType = SeasonType, 
-                                  interval = interval_levels[ii],
-                                  GF = 0, GA = 0, count = 1 - t[1, ]$count, 
-                                  ManpowerAway = manpower_away, 
-                                  ManpowerHome = manpower_home,
-                                  AwayGoals = AwayGoals, HomeGoals = HomeGoals,
-                                  HomeResult = HomeResult))
+        if (last_interval_level != interval_levels[ii]) {
+          if (i == 1) {
+            # if it is the first time interval before made a goal, gf and ga are 0
+            l <- list(t, data.table(GameId = id, SeasonType = SeasonType, 
+                                    interval = interval_levels[ii],
+                                    GF = 0, GA = 0, count = 1 - t[1, ]$count, 
+                                    ManpowerAway = manpower_away, 
+                                    ManpowerHome = manpower_home,
+                                    AwayGoals = AwayGoals, HomeGoals = HomeGoals,
+                                    HomeResult = HomeResult))
+          } else {
+            l <- list(t, data.table(GameId = id, SeasonType = SeasonType, 
+                                    interval = interval_levels[ii],
+                                    GF = t[i-1, ]$GF, GA = t[i-1, ]$GA,
+                                    count = 1 - t[i, ]$count, 
+                                    ManpowerAway = manpower_away, 
+                                    ManpowerHome = manpower_home,
+                                    AwayGoals = AwayGoals, HomeGoals = HomeGoals,
+                                    HomeResult = HomeResult))
+          }
         } else {
+          jj <- which(t$interval == last_interval_level)
           l <- list(t, data.table(GameId = id, SeasonType = SeasonType, 
                                   interval = interval_levels[ii],
                                   GF = t[i-1, ]$GF, GA = t[i-1, ]$GA,
-                                  count = 1 - t[i, ]$count, 
+                                  count = 1 - sum(t[jj, ]$count), 
                                   ManpowerAway = manpower_away, 
                                   ManpowerHome = manpower_home,
                                   AwayGoals = AwayGoals, HomeGoals = HomeGoals,
                                   HomeResult = HomeResult))
         }
-      } else {
-        jj <- which(t$interval == last_interval_level)
-        l <- list(t, data.table(GameId = id, SeasonType = SeasonType, 
-                                interval = interval_levels[ii],
-                                GF = t[i-1, ]$GF, GA = t[i-1, ]$GA,
-                                count = 1 - sum(t[jj, ]$count), 
-                                ManpowerAway = manpower_away, 
-                                ManpowerHome = manpower_home,
-                                AwayGoals = AwayGoals, HomeGoals = HomeGoals,
-                                HomeResult = HomeResult))
+        t <- rbindlist(l)
+        last_interval_level <- interval_levels[ii]
       }
-      t <- rbindlist(l)
-      last_interval_level <- interval_levels[ii]
     }
     
     # order rows by interval, gf and ga
@@ -491,7 +502,8 @@ get_count_matrix <- function(df, time_interval, type = c("ratio", "after")) {
   # add manpower difference column
   count_matrix$ManpowerDiff <- count_matrix$ManpowerHome - count_matrix$ManpowerAway
   # add goal difference column
-  count_matrix$GoalDiff <- count_matrix$HomeGoals - count_matrix$AwayGoals
+  # goals for:進球數，goals against:失球數
+  count_matrix$GoalDiff <- count_matrix$GF - count_matrix$GA
   
   # add begin time and end time columns
   split_time <- strsplit(as.character(count_matrix$interval), ",")#[[1]]
@@ -510,11 +522,9 @@ get_count_matrix <- function(df, time_interval, type = c("ratio", "after")) {
 }
 ```
 
-
-
 ***
 
-# Count Matrix
+# Count Matrix - Ratio
 ```{r}
 # function
 goal_ditribution_plot <- function(df, time_interval) {
@@ -567,8 +577,75 @@ count_plot <- function(count, groupby = c("GoalDiff", "ManpowerDiff"), diff, res
   abline(h = mean(count$count), col = "red", lty=2)
   labs <- levels(count$interval)
   # text(x=as.integer(count$interval) - 1,
-  text(y=min(count$count) - (max(count$count)- min(count$count))/10,
-       labs, xpd=TRUE, srt=45, cex=0.5)
+  # text(y=min(count$count) - (max(count$count)- min(count$count))/10,
+  #      labs, xpd=TRUE, srt=45, cex=0.5)
+}
+
+all_plots <- function(df, type = c("GoalDiff", "ManpowerDiff")) {
+  if (type == "GoalDiff") {
+    result <- "win"
+    par(mfrow=c(1,2))
+    count_plot(df$count_win, "GoalDiff", 1, result)
+    count_plot(df$count_win, "GoalDiff", 2, result)
+
+    result <- "lose"
+    par(mfrow=c(1,2))
+    count_plot(df$count_lose, "GoalDiff", -1, result)
+    count_plot(df$count_lose, "GoalDiff", -2, result)
+
+    result <- "tied_win"
+    par(mfrow=c(1,2))
+    count_plot(df$count_tied_win, "GoalDiff", 1, result)
+    count_plot(df$count_tied_win, "GoalDiff", 2, result)
+    
+    result <- "tied_lose"
+    par(mfrow=c(1,2))
+    count_plot(df$count_tied_lose, "GoalDiff", -1, result)
+    count_plot(df$count_tied_lose, "GoalDiff", -2, result)
+  } 
+  if (type == "ManpowerDiff") {
+    result <- "win"
+    count_plot(df$count_win, "ManpowerDiff", 0, result)
+    
+    par(mfrow=c(1,2))
+    count_plot(df$count_win, "ManpowerDiff", 1, result)
+    count_plot(df$count_win, "ManpowerDiff", 2, result)
+    par(mfrow=c(1,2))
+    count_plot(df$count_win, "ManpowerDiff", -1, result)
+    count_plot(df$count_win, "ManpowerDiff", -2, result)
+    
+    result <- "lose"
+    par(mfrow=c(1,1))
+    count_plot(df$count_lose, "ManpowerDiff", 0, result)
+    
+    par(mfrow=c(1,2))
+    count_plot(df$count_lose, "ManpowerDiff", 1, result)
+    count_plot(df$count_lose, "ManpowerDiff", 2, result)
+    par(mfrow=c(1,2))
+    count_plot(df$count_lose, "ManpowerDiff", -1, result)
+    count_plot(df$count_lose, "ManpowerDiff", -2, result)
+
+    result <- "tied_win"
+    par(mfrow=c(1,1))
+    count_plot(df$count_tied_win, "ManpowerDiff", 0, result)
+    
+    par(mfrow=c(1,2))
+    count_plot(df$count_tied_win, "ManpowerDiff", 1, result)
+    count_plot(df$count_tied_win, "ManpowerDiff", 2, result)
+    par(mfrow=c(1,2))
+    count_plot(df$count_tied_win, "ManpowerDiff", -1, result)
+    count_plot(df$count_tied_win, "ManpowerDiff", -2, result)
+  
+    result <- "tied_lose"
+    par(mfrow=c(1,1))
+    count_plot(df$count_tied_lose, "ManpowerDiff", 0, result)
+    par(mfrow=c(1,2))
+    count_plot(df$count_tied_lose, "ManpowerDiff", 1, result)
+    count_plot(df$count_tied_lose, "ManpowerDiff", 2, result)
+    par(mfrow=c(1,2))
+    count_plot(df$count_tied_lose, "ManpowerDiff", -1, result)
+    count_plot(df$count_tied_lose, "ManpowerDiff", -2, result)
+  }
 }
 ```
 
@@ -576,7 +653,6 @@ count_plot <- function(count, groupby = c("GoalDiff", "ManpowerDiff"), diff, res
 ### Time interval = 120 seconds
 ```{r}
 time_interval <- 120
-
 goal_ditribution_plot(df, time_interval)
 
 # count_matrix_120 <- get_count_matrix(df, time_interval, type = "ratio")
@@ -584,197 +660,110 @@ goal_ditribution_plot(df, time_interval)
 load("../data/count_matrix_120.Rdata")
 
 count_120 <- count_group_homeresult(count_matrix_120, time_interval, groupby = "goaldiff")
-
-# result <- "win"
-# par(mfrow=c(1,2))
-# count_plot(count_120$count_win, "GoalDiff", 1, result)
-# count_plot(count_120$count_win, "GoalDiff", 2, result)
-# par(mfrow=c(1,2))
-# count_plot(count_120$count_win, "GoalDiff", 3, result)
-# count_plot(count_120$count_win, "GoalDiff", 4, result)
-# 
-# result <- "lose"
-# par(mfrow=c(1,2))
-# count_plot(count_120$count_lose, "GoalDiff", -1, result)
-# count_plot(count_120$count_lose, "GoalDiff", -2, result)
-# par(mfrow=c(1,2))
-# count_plot(count_120$count_lose, "GoalDiff", -3, result)
-# count_plot(count_120$count_lose, "GoalDiff", -4, result)
-# 
-# 
-# result <- "tied_win"
-# par(mfrow=c(1,2))
-# count_plot(count_120$count_tied_win, "GoalDiff", 1, result)
-# count_plot(count_120$count_tied_win, "GoalDiff", 2, result)
-# result <- "tied_lose"
-# par(mfrow=c(1,2))
-# count_plot(count_120$count_tied_lose, "GoalDiff", -1, result)
-# count_plot(count_120$count_tied_lose, "GoalDiff", -2, result)
+all_plots(count_120, type = "GoalDiff")
 ```
-
 
 ### Time interval = 60 seconds
 ```{r}
 time_interval <- 60
-
 goal_ditribution_plot(df, time_interval)
 
 # count_matrix_60 <- get_count_matrix(df, time_interval, type = "ratio")
 # save(count_matrix_60, file = "../data/count_matrix_60.Rdata")
 load("../data/count_matrix_60.Rdata")
-
 count_60 <- count_group_homeresult(count_matrix_60, time_interval, groupby = "goaldiff")
-
-result <- "win"
-par(mfrow=c(1,2))
-count_plot(count_60$count_win, "GoalDiff", 1, result)
-count_plot(count_60$count_win, "GoalDiff", 2, result)
-par(mfrow=c(1,2))
-count_plot(count_60$count_win, "GoalDiff", 3, result)
-count_plot(count_60$count_win, "GoalDiff", 4, result)
-
-result <- "lose"
-par(mfrow=c(1,2))
-count_plot(count_60$count_lose, "GoalDiff", -1, result)
-count_plot(count_60$count_lose, "GoalDiff", -2, result)
-par(mfrow=c(1,2))
-count_plot(count_60$count_lose, "GoalDiff", -3, result)
-count_plot(count_60$count_lose, "GoalDiff", -4, result)
-
-
-result <- "tied_win"
-par(mfrow=c(1,2))
-count_plot(count_60$count_tied_win, "GoalDiff", 1, result)
-count_plot(count_60$count_tied_win, "GoalDiff", 2, result)
-result <- "tied_lose"
-par(mfrow=c(1,2))
-count_plot(count_60$count_tied_lose, "GoalDiff", -1, result)
-count_plot(count_60$count_tied_lose, "GoalDiff", -2, result)
+all_plots(count_60, type = "GoalDiff")
 ```
-
 
 ### Time interval = 30 seconds
 ```{r}
 time_interval <- 30
-
 goal_ditribution_plot(df, time_interval)
 
 # count_matrix_30 <- get_count_matrix(df, time_interval, type = "ratio")
 # save(count_matrix_30, file = "../data/count_matrix_30.Rdata")
 load("../data/count_matrix_30.Rdata")
-
 count_30 <- count_group_homeresult(count_matrix_30, time_interval, groupby = "goaldiff")
-
-result <- "win"
-par(mfrow=c(1,2))
-count_plot(count_30$count_win, "GoalDiff", 1, result)
-count_plot(count_30$count_win, "GoalDiff", 2, result)
-par(mfrow=c(1,2))
-count_plot(count_30$count_win, "GoalDiff", 3, result)
-count_plot(count_30$count_win, "GoalDiff", 4, result)
-
-result <- "lose"
-par(mfrow=c(1,2))
-count_plot(count_30$count_lose, "GoalDiff", -1, result)
-count_plot(count_30$count_lose, "GoalDiff", -2, result)
-par(mfrow=c(1,2))
-count_plot(count_30$count_lose, "GoalDiff", -3, result)
-count_plot(count_30$count_lose, "GoalDiff", -4, result)
-
-
-result <- "tied_win"
-par(mfrow=c(1,2))
-count_plot(count_30$count_tied_win, "GoalDiff", 1, result)
-count_plot(count_30$count_tied_win, "GoalDiff", 2, result)
-result <- "tied_lose"
-par(mfrow=c(1,2))
-count_plot(count_30$count_tied_los, "GoalDiff", -1, result)
-count_plot(count_30$count_tied_lose, "GoalDiff", -2, result)
+all_plots(count_30, type = "GoalDiff")
 ```
-
 
 ## Group by Home Team Result(win/lose/tied win/tied lose) & ManpowerDiff
 ### Time interval = 120 seconds
 ```{r}
 time_interval <- 120
-
 count_120 <- count_group_homeresult(count_matrix_120, time_interval, groupby = "manpowerdiff")
-
-result <- "win"
-count_plot(count_120$count_win, "ManpowerDiff", 0, result)
-par(mfrow=c(1,2))
-count_plot(count_120$count_win, "ManpowerDiff", 1, result)
-count_plot(count_120$count_win, "ManpowerDiff", 2, result)
-par(mfrow=c(1,2))
-count_plot(count_120$count_win, "ManpowerDiff", -1, result)
-count_plot(count_120$count_win, "ManpowerDiff", -2, result)
-
-result <- "lose"
-count_plot(count_120$count_lose, "ManpowerDiff", 0, result)
-par(mfrow=c(1,2))
-count_plot(count_120$count_lose, "ManpowerDiff", 1, result)
-count_plot(count_120$count_lose, "ManpowerDiff", 2, result)
-par(mfrow=c(1,2))
-count_plot(count_120$count_lose, "ManpowerDiff", -1, result)
-count_plot(count_120$count_lose, "ManpowerDiff", -2, result)
-
-
-result <- "tied_win"
-count_plot(count_120$count_tied_win, "ManpowerDiff", 0, result)
-par(mfrow=c(1,2))
-count_plot(count_120$count_tied_win, "ManpowerDiff", 1, result)
-count_plot(count_120$count_tied_win, "ManpowerDiff", 2, result)
-
-result <- "tied_lose"
-count_plot(count_120$count_tied_lose, "ManpowerDiff", 0, result)
-par(mfrow=c(1,2))
-count_plot(count_120$count_tied_lose, "ManpowerDiff", -1, result)
-count_plot(count_120$count_tied_lose, "ManpowerDiff", -2, result)
+all_plots(count_120, type = "ManpowerDiff")
 ```
 
-
-
-
-
-
-
-
-
-
-
-```{r, eval = FALSE}
-cc <- count_30$count_interval
-cc$Interval <- 30
-statistics <- cc
-
-cc <- count_60$count_interval
-cc$Interval <- 60
-statistics <- rbind(statistics, cc)
-
-cc <- count_120$count_interval
-cc$Interval <- 120
-statistics <- rbind(statistics, cc)
-
-rm(cc)
-statistics <- statistics[order(statistics$Type), ]
-kable(statistics, caption = paste("Statistics for count interval = ", time_interval)) %>%
-  kable_styling(bootstrap_options = "striped", full_width = F, 
-                position = "left")
+### Time interval = 60 seconds
+```{r}
+time_interval <- 60
+count_60 <- count_group_homeresult(count_matrix_60, time_interval, groupby = "manpowerdiff")
+all_plots(count_60, type = "ManpowerDiff")
 ```
 
-
-## Different counting method
-```{r, eval = FALSE}
+### Time interval = 30 seconds
+```{r}
 time_interval <- 30
-
-# count_matrix_30_before <- get_count_matrix(df, time_interval, type = "count_before")
-# save(count_matrix_30_before, file = "../data/count_matrix_30_before.Rdata")
-load("../data/count_matrix_30_before.Rdata")
-
-count_30_bofore <- count_group_homeresult(count_matrix_30_before, time_interval)
-kable(count_30_bofore$count_interval, caption = paste("Statistics for count interval = ", time_interval)) %>%
-  kable_styling(bootstrap_options = "striped", full_width = F, 
-                position = "left")
+count_30 <- count_group_homeresult(count_matrix_30, time_interval, groupby = "manpowerdiff")
+all_plots(count_30, type = "ManpowerDiff")
 ```
+
+# Count Matrix - After
+## Group by Home Team Result(win/lose/tied win/tied lose) & GoalDiff
+### Time interval = 120 seconds
+```{r}
+time_interval <- 120
+# count_matrix_120_after <- get_count_matrix(df, time_interval, type = "after")
+# save(count_matrix_120_after, file = "../data/count_matrix_120_after.Rdata")
+load("../data/count_matrix_120_after.Rdata")
+count_120 <- count_group_homeresult(count_matrix_120_after, time_interval, groupby = "goaldiff")
+all_plots(count_120, type = "GoalDiff")
+```
+
+### Time interval = 60 seconds
+```{r}
+time_interval <- 60
+# count_matrix_60_after <- get_count_matrix(df, time_interval, type = "after")
+# save(count_matrix_60_after, file = "../data/count_matrix_60_after.Rdata")
+load("../data/count_matrix_60_after.Rdata")
+count_60 <- count_group_homeresult(count_matrix_60_after, time_interval, groupby = "goaldiff")
+all_plots(count_60, type = "GoalDiff")
+```
+
+### Time interval = 30 seconds
+```{r}
+time_interval <- 30
+# count_matrix_30_after <- get_count_matrix(df, time_interval, type = "after")
+# save(count_matrix_30_after, file = "../data/count_matrix_30_after.Rdata")
+load("../data/count_matrix_30_after.Rdata")
+count_30 <- count_group_homeresult(count_matrix_30_after, time_interval, groupby = "goaldiff")
+all_plots(count_30, type = "GoalDiff")
+```
+
+## Group by Home Team Result(win/lose/tied win/tied lose) & ManpowerDiff
+### Time interval = 120 seconds
+```{r}
+time_interval <- 120
+count_120 <- count_group_homeresult(count_matrix_120_after, time_interval, groupby = "manpowerdiff")
+all_plots(count_120, type = "ManpowerDiff")
+```
+
+### Time interval = 60 seconds
+```{r}
+time_interval <- 60
+count_60 <- count_group_homeresult(count_matrix_60_after, time_interval, groupby = "manpowerdiff")
+all_plots(count_60, type = "ManpowerDiff")
+```
+
+### Time interval = 30 seconds
+```{r}
+time_interval <- 30
+count_30 <- count_group_homeresult(count_matrix_30_after, time_interval, groupby = "manpowerdiff")
+all_plots(count_30, type = "ManpowerDiff")
+```
+
+
+
 
 
